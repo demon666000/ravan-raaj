@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="hi">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#090d18"><title>SarvAI V3</title>
+<style>
+:root{--bg:#090d18;--panel:#111827;--line:#26334d;--text:#edf3ff;--muted:#91a0bb;--accent:#4f7cff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,sans-serif}
+header{position:sticky;top:0;z-index:5;padding:14px 16px;border-bottom:1px solid var(--line);background:#090d18eF;backdrop-filter:blur(12px)}
+.brand{font-size:22px;font-weight:850}.tag{color:var(--muted);font-size:12px}
+main{max-width:980px;margin:auto;padding:14px 12px 120px}.bar{display:flex;gap:8px;overflow:auto;padding-bottom:12px}
+button,.chip{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:12px;padding:9px 12px;font-weight:650;cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent)}button:disabled{opacity:.5}
+#chat{display:flex;flex-direction:column;gap:10px}.msg{max-width:92%;padding:12px 14px;border-radius:16px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+.user{align-self:flex-end;background:#3159d8}.bot{align-self:flex-start;background:var(--panel);border:1px solid var(--line)}
+.meta{font-size:11px;color:var(--muted);margin-top:6px}.status{font-size:12px;color:var(--muted);margin:8px 0}
+.composer{position:fixed;bottom:0;left:0;right:0;padding:10px;background:#090d18ef;border-top:1px solid var(--line);z-index:5}
+.row{max-width:980px;margin:auto;display:flex;gap:8px}.row textarea{flex:1;min-height:48px;max-height:150px;resize:none;border:1px solid var(--line);border-radius:14px;background:#0e1525;color:white;padding:12px;font:inherit}
+.cards{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:4px 0 14px}.card{padding:12px;border:1px solid var(--line);border-radius:14px;background:#0e1525}.card b{display:block}.card span{font-size:12px;color:var(--muted)}
+dialog{width:min(620px,92vw);background:#101827;color:var(--text);border:1px solid var(--line);border-radius:18px;padding:18px}dialog::backdrop{background:#0008}
+input,select{width:100%;margin:7px 0;padding:10px;border-radius:10px;border:1px solid var(--line);background:#0a1020;color:white}
+pre{background:#080d17;padding:10px;border-radius:10px;overflow:auto}
+@media(min-width:700px){.cards{grid-template-columns:repeat(4,1fr)}}
+</style></head>
+<body>
+<header><div class="brand">🌌 SarvAI V3</div><div class="tag">All-round AI workspace • Android-friendly local + cloud fallback</div></header>
+<main>
+<div class="bar">
+<button onclick="newChat()">＋ New chat</button><button onclick="startVoice()">🎙️ Voice</button><button onclick="speak()">🔊 Speak</button><button onclick="openMemory()">🧠 Memory</button>
+<button onclick="openSettings()">⚙️ Settings</button><button onclick="document.getElementById('file').click()">📎 File</button>
+<input id="file" type="file" hidden multiple>
+</div>
+<div class="cards">
+<div class="card"><b>🧠 Brain</b><span>General reasoning</span></div>
+<div class="card"><b>🔬 Scientist</b><span>Math + verification</span></div>
+<div class="card"><b>🌐 Research</b><span>Search adapter ready</span></div>
+<div class="card"><b>👁️ Vision</b><span>Image/file adapter</span></div>
+</div>
+<div id="status" class="status">Local AI: not loaded. Send a message to start.</div>
+<div id="chat"><div class="msg bot">नमस्ते! मैं SarvAI V2 हूँ। सवाल पूछो, problem दो, file लगाओ, या कुछ बनाने को कहो। मैं पहले काम का प्रकार पहचानकर सही engine/tool चुनने की कोशिश करता हूँ।</div></div>
+</main>
+<div class="composer"><div class="row">
+<textarea id="input" placeholder="कुछ भी पूछो…"></textarea><button class="primary" id="send" onclick="send()">Send</button>
+</div></div>
+
+<dialog id="memory"><h3>🧠 Local Memory</h3><p class="tag">यह memory केवल इसी browser में रहती है।</p>
+<textarea id="memText" style="width:100%;height:150px;background:#0a1020;color:white;border:1px solid var(--line);border-radius:10px;padding:10px"></textarea>
+<div style="display:flex;gap:8px;margin-top:10px"><button onclick="saveMemory()">Save</button><button onclick="memory.close()">Close</button></div></dialog>
+
+<dialog id="settings"><h3>⚙️ Settings</h3>
+<label>AI mode</label><select id="mode"><option value="local">Local browser model</option><option value="demo">Demo/router mode</option></select>
+<p class="tag">V2 architecture keeps model providers separate, so a stronger local or server model can be plugged in later.</p>
+<button onclick="settings.close()">Close</button></dialog>
+
+<script src="https://js.puter.com/v2/"></script>
+<script type="module">
+import {CreateMLCEngine} from "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.80/+esm";
+const MODEL="Qwen2.5-0.5B-Instruct-q4f16_1-MLC";
+let engine=null, loading=null, files=[];
+const $=x=>document.getElementById(x), chat=$("chat"), input=$("input"), sendBtn=$("send"), status=$("status");
+
+function add(t,c="bot"){let d=document.createElement("div");d.className="msg "+c;d.textContent=t;chat.appendChild(d);window.scrollTo(0,document.body.scrollHeight);return d}
+function classify(q){
+ const x=q.toLowerCase();
+ if(/solve|equation|calculate|math|गणित|हिसाब|x\s*=/.test(x))return"math";
+ if(/code|coding|program|javascript|python|html|css|bug|error/.test(x))return"code";
+ if(/search|research|latest|news|today|आज|ताज़ा|source|स्रोत/.test(x))return"research";
+ if(/image|photo|picture|diagram|screenshot|तस्वीर/.test(x))return"vision";
+ return"general";
+}
+function localCalc(s){
+ if(!/^[0-9+\-*/().%\s^]+$/.test(s))return null;
+ try{return String(Function('"use strict";return ('+s.replaceAll("^","**")+')')())}catch{return null}
+}
+function safetyPrompt(){return `You are SarvAI, a helpful general-purpose AI for a broad audience. Answer in the user's language and be accurate. For weapons, poisons, dangerous chemicals, self-harm, illegal drugs, or other dangerous activities: do NOT provide instructions, recipes, quantities, sourcing, concealment, optimization, or step-by-step operational guidance. You may give safe educational information, risks, prevention, emergency/safety steps, laws at a high level, historical context, and how to get qualified adult/professional help. For medical emergencies, encourage contacting local emergency services or a trusted adult. Do not claim you can do live web research unless a web tool is actually connected. If uncertain, say so.`}
+function memory(){return localStorage.getItem("sarvai_memory")||""}
+function context(){let m=memory();return m?`\nUser-approved memory (use only if relevant): ${m}`:""}
+async function getEngine(){
+ if(engine)return engine;if(loading)return loading;
+ sendBtn.disabled=true;status.textContent="Local AI model load/download हो रहा है…";
+ loading=CreateMLCEngine(MODEL,{initProgressCallback:p=>status.textContent=p.text||"Model loading…"})
+ .then(e=>{engine=e;status.textContent="✅ Local AI ready";sendBtn.disabled=false;return e})
+ .catch(e=>{status.textContent="ℹ️ Local AI इस phone/browser पर नहीं चला — Cloud AI fallback available है.";sendBtn.disabled=false;throw e});
+ return loading;
+}
+async function cloudChat(q){
+ if(!window.puter||!puter.ai)throw new Error("Cloud AI library unavailable");
+ status.textContent="☁️ Cloud AI से जवाब आ रहा है…";
+ const prompt=safetyPrompt()+context()+`\nTask type: ${classify(q)}\nUser: ${q}`;
+ const r=await puter.ai.chat(prompt,{model:"openai/gpt-5.6-luna"});
+ if(typeof r === "string") return r;
+ return r?.message?.content ?? r?.content ?? String(r);
+}
+async function localChat(q){
+ const e=await getEngine();
+ const prompt=safetyPrompt()+context();
+ const r=await e.chat.completions.create({messages:[{role:"system",content:prompt},{role:"user",content:q}],temperature:.35,max_tokens:900});
+ return r.choices?.[0]?.message?.content||"No answer";
+}
+async function ask(q){
+ const calc=localCalc(q.trim());
+ if(calc!==null)return `🧮 Result: ${calc}`;
+ try{return await localChat(q)}catch(e){
+   try{return await cloudChat(q)}catch(e2){return "AI engine start नहीं हो पाया। Internet check करो. अगर local model इस phone पर support नहीं करता, Cloud AI के लिए नीचे/ऊपर sign-in prompt आने पर उसे allow करो."}
+ }
+}
+async function send(){
+ const q=input.value.trim();if(!q)return;input.value="";add(q,"user");sendBtn.disabled=true;
+ const d=add("Thinking…","bot");
+ try{d.textContent=await ask(q);status.textContent=engine?"✅ Local AI ready":"☁️ Cloud fallback ready";}
+ catch(e){d.textContent="Error: "+(e?.message||e);status.textContent="⚠️ Error"}
+ sendBtn.disabled=false;input.focus();
+}
+window.send=send;
+input.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send()}});
+function newChat(){chat.innerHTML='<div class="msg bot">नई chat शुरू हो गई। कुछ भी पूछो।</div>'}window.newChat=newChat;
+function openMemory(){$("memText").value=memory();$("memory").showModal()}window.openMemory=openMemory;
+function saveMemory(){localStorage.setItem("sarvai_memory",$("memText").value);$("memory").close();add("🧠 Memory saved locally.","bot")}window.saveMemory=saveMemory;
+function openSettings(){$("mode").value=localStorage.getItem("sarvai_mode")||"auto";$("settings").showModal()}window.openSettings=openSettings;
+$("mode").addEventListener("change",e=>localStorage.setItem("sarvai_mode",e.target.value));
+$("file").addEventListener("change",async e=>{
+ files=[...e.target.files]; if(!files.length)return;
+ for(const f of files){
+  let text=`📎 File attached: ${f.name} (${Math.round(f.size/1024)} KB)`;
+  if(f.type.startsWith("text/")||/\.md$|\.json$|\.csv$|\.js$|\.html$|\.css$/i.test(f.name)){
+   const raw=await f.text(); text+=`\n\nExtracted text:\n${raw.slice(0,12000)}`;
+  }
+  add(text,"bot");
+ }
+});
+window.speak=()=>{const last=[...document.querySelectorAll(".bot")].pop()?.textContent;if(last&&speechSynthesis){speechSynthesis.cancel();speechSynthesis.speak(new SpeechSynthesisUtterance(last))}};
+window.startVoice=()=>{const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){add("🎙️ इस browser में voice input available नहीं है.","bot");return} const r=new SR();r.lang="hi-IN";r.interimResults=false;r.onresult=e=>{input.value=e.results[0][0].transcript;send()};r.onerror=()=>add("🎙️ Voice input start नहीं हुआ.","bot");r.start()};
+</script></body></html>
